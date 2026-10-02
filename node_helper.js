@@ -14,6 +14,7 @@
 
 const NodeHelper = require('node_helper')
 const Log = require('logger')
+const { fetchOnecall } = require('./core/onecall')
 
 module.exports = NodeHelper.create({
 
@@ -21,7 +22,7 @@ module.exports = NodeHelper.create({
     if (notification === 'OPENWEATHER_ONECALL_GET') {
       Log.debug('Node received')
       if (!config.apikey) {
-        Log.error('No API key configured. Get an API key at https://openweathermap.org/api/one-call-api')
+        Log.error('No API key configured. Get an API key at https://openweathermap.org/api/one-call-4')
         return
       }
       const coordinates = [config.latitude, config.longitude]
@@ -31,23 +32,8 @@ module.exports = NodeHelper.create({
         return
       }
 
-      const url = new URL(`https://api.openweathermap.org/data/${config.apiVersion}/onecall`)
-      url.searchParams.set('lat', config.latitude)
-      url.searchParams.set('lon', config.longitude)
-      url.searchParams.set('exclude', config.exclude)
-      url.searchParams.set('appid', config.apikey)
-      url.searchParams.set('lang', config.language)
-      if (config.units) {
-        url.searchParams.set('units', config.units)
-      }
-
       try {
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-
-        const data = await response.json()
+        const data = await fetchOnecall(config, fetch)
 
         Log.debug(`Got weather data for ${config.latitude},${config.longitude}`)
 

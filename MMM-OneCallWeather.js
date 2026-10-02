@@ -6,7 +6,7 @@ Module.register('MMM-OneCallWeather', {
     latitude: false,
     longitude: false,
     apikey: '',
-    apiVersion: '3.0',
+    apiVersion: '4.0',
     units: config.units,
     showRainAmount: true,
     showSnowAmount: true,
@@ -113,6 +113,7 @@ Module.register('MMM-OneCallWeather', {
       longitude: this.config.longitude,
       units: this.config.units,
       language: this.config.language,
+      showAlerts: this.config.showAlerts,
     })
   },
 

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import { strict as assert } from 'node:assert'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
+import onecall from '../core/onecall.js'
 
 const baseConfig = {
     apikey: 'test-key',
@@ -34,6 +35,9 @@ const baseConfig = {
         }
         if (name === 'logger') {
           return logger
+        }
+        if (name === './core/onecall') {
+          return onecall
         }
         throw new Error(`Unexpected dependency: ${name}`)
       },
