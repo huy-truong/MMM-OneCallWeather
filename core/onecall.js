@@ -76,12 +76,19 @@ async function fetchOnecall(config, fetchImpl = fetch) {
       if (records.size === previousSize) {
         throw new Error(`One Call 4.0 pagination made no progress for ${section}`)
       }
-      const next = new URL(page.next)
-      if (next.origin !== url.origin || next.pathname !== url.pathname) {
-        throw new Error(`Invalid One Call 4.0 pagination URL for ${section}`)
+      const next = new URL(page.next, url)
+      const start = next.searchParams.get('start')
+      if (!start || !/^\d+$/.test(start)) {
+        throw new Error(`Invalid One Call 4.0 pagination start for ${section}`)
       }
-      // Keep the configured units and language on every page.
-      url = createUrl(next)
+      // Use only the timeline cursor from API-generated links, which may use
+      // another scheme or base path. Always request our canonical HTTPS endpoint.
+      url = createUrl(`${baseUrl}${endpoint}`)
+      url.searchParams.set('start', start)
+      const count = next.searchParams.get('cnt')
+      if (count && /^\d+$/.test(count) && Number(count) > 0) {
+        url.searchParams.set('cnt', count)
+      }
     }
     const values = [...records.values()].sort((left, right) => left.dt - right.dt)
     data[section] = section === 'current' ? values[0] : values

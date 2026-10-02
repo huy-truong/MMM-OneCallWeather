@@ -117,10 +117,45 @@ describe('One Call API adapter', () => {
     assert.equal(data.hourly.length, 3)
   })
 
-  it('rejects pagination loops and unexpected destinations', async () => {
+  it('uses canonical HTTPS endpoints for absolute and relative pagination links', async () => {
+    for (const link of [
+      'http://api.openweathermap.org/data/4.0/onecall/timeline/1h?start=21&cnt=20',
+      '/data/4.0/onecall/timeline/1h/?start=21&cnt=20',
+      '?start=21&cnt=20',
+      'https://example.com/other-path?start=21&cnt=20&appid=other&lat=99&units=imperial&lang=en',
+    ]) {
+      const requests = []
+      const data = await fetchOnecall({ ...config, exclude: 'current,minutely,daily' }, async (url) => {
+        requests.push(url)
+        assert.equal(url.origin, 'https://api.openweathermap.org')
+        assert.equal(url.pathname, '/data/4.0/onecall/timeline/1h')
+        assert.equal(url.searchParams.get('appid'), config.apikey)
+        assert.equal(url.searchParams.get('lat'), '0')
+        assert.equal(url.searchParams.get('units'), 'metric')
+        assert.equal(url.searchParams.get('lang'), 'fr')
+        if (requests.length === 1) {
+          return response({ data: records(1, 20), next: link })
+        }
+        assert.equal(url.searchParams.get('start'), '21')
+        assert.equal(url.searchParams.get('cnt'), '20')
+        return response({ data: records(21, 20) })
+      })
+      assert.equal(requests.length, 2)
+      assert.equal(data.hourly.length, 40)
+      assert.equal(data.hourly[20].dt, 21)
+    }
+  })
+
+  it('rejects pagination loops and missing or invalid cursors', async () => {
     const hourlyOnly = { ...config, exclude: 'current,minutely,daily' }
-    await assert.rejects(fetchOnecall(hourlyOnly, async url => response({ data: records(1, 2), next: url.href })), /Repeated One Call/)
-    await assert.rejects(fetchOnecall(hourlyOnly, async () => response({ data: records(1, 2), next: 'https://example.com/page' })), /Invalid One Call 4.0 pagination URL/)
+    let calls = 0
+    await assert.rejects(fetchOnecall(hourlyOnly, async () => {
+      calls += 1
+      return response({ data: records(calls * 2, 2), next: '?start=2' })
+    }), /Repeated One Call/)
+    for (const next of ['https://example.com/page', '?start=invalid', '?start=']) {
+      await assert.rejects(fetchOnecall(hourlyOnly, async () => response({ data: records(1, 2), next })), /Invalid One Call 4.0 pagination start/)
+    }
     await assert.rejects(fetchOnecall(hourlyOnly, async url => response({ data: records(1, 2), next: `${url}&start=2` })), /pagination made no progress/)
   })
 })
