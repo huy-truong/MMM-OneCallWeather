@@ -15,12 +15,44 @@ async function fetchOnecall(config, fetchImpl = fetch) {
     }
     return url
   }
+  const maxRetries = config.requestRetries ?? 2
+  const timeoutMs = config.requestTimeout ?? 15000
+  const backoffMs = config.requestBackoff ?? 1500
+
   const request = async (url) => {
-    const response = await fetchImpl(url)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    let lastError
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      let timer
+      try {
+        const controller = new AbortController()
+        timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs)
+        const response = await fetchImpl(url, { signal: controller.signal })
+        clearTimeout(timer)
+        if (!response.ok) {
+          const isTransient = [429, 500, 502, 503, 504].includes(response.status)
+          if (isTransient && attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, backoffMs * (attempt + 1)))
+            continue
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+        return await response.json()
+      }
+      catch (error) {
+        if (timer) {
+          clearTimeout(timer)
+        }
+        lastError = error
+        const isAbort = error.name === 'AbortError' || error.message?.includes('timed out')
+        const isNetwork = error.name === 'TypeError'
+        if ((isAbort || isNetwork) && attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, backoffMs * (attempt + 1)))
+          continue
+        }
+        throw error
+      }
     }
-    return response.json()
+    throw lastError
   }
 
   if (version !== '4.0') {
@@ -29,7 +61,7 @@ async function fetchOnecall(config, fetchImpl = fetch) {
     return request(url)
   }
 
-  const excluded = new Set((config.exclude ?? 'minutely').split(',').map(value => value.trim()))
+  const excluded = new Set((config.exclude ?? 'minutely,hourly').split(',').map(value => value.trim()))
   const data = {}
   const alertIds = new Set()
   const endpoints = [
@@ -39,9 +71,15 @@ async function fetchOnecall(config, fetchImpl = fetch) {
     ['daily', 'timeline/1day', 8],
   ]
 
-  await Promise.all(endpoints.map(async ([section, endpoint, limit]) => {
+  for (const [section, endpoint, limit] of endpoints) {
     if (excluded.has(section)) {
-      return
+      continue
+    }
+    if (section === 'current' && config.showCurrent === false) {
+      continue
+    }
+    if ((section === 'daily' || section === 'hourly') && config.showForecast === false) {
+      continue
     }
     let url = createUrl(`${baseUrl}${endpoint}`)
     const records = new Map()
@@ -92,11 +130,12 @@ async function fetchOnecall(config, fetchImpl = fetch) {
     }
     const values = [...records.values()].sort((left, right) => left.dt - right.dt)
     data[section] = section === 'current' ? values[0] : values
-  }))
+  }
 
   if (!excluded.has('alerts') && config.showAlerts !== false) {
     const language = (config.language || 'en').toLowerCase().replaceAll('_', '-')
-    const alerts = await Promise.all([...alertIds].map(async (id) => {
+    const alerts = []
+    for (const id of alertIds) {
       const url = new URL(`${baseUrl}alert/${encodeURIComponent(id)}`)
       url.searchParams.set('appid', config.apikey)
       const alert = await request(url)
@@ -110,8 +149,8 @@ async function fetchOnecall(config, fetchImpl = fetch) {
       }
       // Some agencies provide tags but leave the event name empty.
       alert.event = alert.event || alert.tags?.join(', ') || 'Weather alert'
-      return alert
-    }))
+      alerts.push(alert)
+    }
     if (alerts.length) {
       data.alerts = alerts
     }

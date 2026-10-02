@@ -117,6 +117,76 @@ describe('One Call API adapter', () => {
     assert.equal(data.hourly.length, 3)
   })
 
+  it('excludes minutely and hourly by default', async () => {
+    const requestedPaths = []
+    const data = await fetchOnecall(
+      { apikey: 'k', latitude: 0, longitude: 0, showAlerts: false },
+      async (url) => {
+        requestedPaths.push(url.pathname)
+        return response({ data: [{ dt: 1, temp: 20 }] })
+      },
+    )
+    assert.deepEqual(requestedPaths, [
+      '/data/4.0/onecall/current',
+      '/data/4.0/onecall/timeline/1day',
+    ])
+    assert.ok(data.current)
+    assert.ok(data.daily)
+    assert.equal(data.hourly, undefined)
+    assert.equal(data.minutely, undefined)
+  })
+
+  it('skips sections when showCurrent or showForecast is false', async () => {
+    const requestedPaths = []
+    await fetchOnecall(
+      { apikey: 'k', latitude: 0, longitude: 0, showCurrent: false, showForecast: false, showAlerts: false },
+      async (url) => {
+        requestedPaths.push(url.pathname)
+        return response({ data: [{ dt: 1 }] })
+      },
+    )
+    assert.deepEqual(requestedPaths, [])
+  })
+
+  it('retries on transient HTTP 504 and succeeds after backoff', async () => {
+    let attempts = 0
+    const data = await fetchOnecall(
+      { ...config, exclude: 'minutely,hourly,daily', requestBackoff: 1 },
+      async () => {
+        attempts += 1
+        if (attempts === 1) {
+          return { ok: false, status: 504, statusText: 'Gateway Time-out' }
+        }
+        return response({ data: [{ dt: 1, temp: 15 }] })
+      },
+    )
+    assert.equal(attempts, 2)
+    assert.equal(data.current.temp, 15)
+  })
+
+  it('retries on request timeout and succeeds after backoff', async () => {
+    let attempts = 0
+    const data = await fetchOnecall(
+      { ...config, exclude: 'minutely,hourly,daily', requestTimeout: 10, requestBackoff: 1 },
+      async (_url, { signal } = {}) => {
+        attempts += 1
+        if (attempts === 1) {
+          return new Promise((resolve, reject) => {
+            const error = new Error('Request timed out')
+            error.name = 'AbortError'
+            if (signal?.aborted) {
+              return reject(error)
+            }
+            signal?.addEventListener('abort', () => reject(error))
+          })
+        }
+        return response({ data: [{ dt: 1, temp: 18 }] })
+      },
+    )
+    assert.equal(attempts, 2)
+    assert.equal(data.current.temp, 18)
+  })
+
   it('uses canonical HTTPS endpoints for absolute and relative pagination links', async () => {
     for (const link of [
       'http://api.openweathermap.org/data/4.0/onecall/timeline/1h?start=21&cnt=20',

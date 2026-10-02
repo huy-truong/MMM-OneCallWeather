@@ -30,7 +30,7 @@ Module.register('MMM-OneCallWeather', {
     decimalSymbol: '.',
     fade: true,
     scale: false,
-    exclude: 'minutely',
+    exclude: 'minutely,hourly',
 
     tableClass: 'small',
     iconset: '4a',
@@ -114,6 +114,8 @@ Module.register('MMM-OneCallWeather', {
       units: this.config.units,
       language: this.config.language,
       showAlerts: this.config.showAlerts,
+      showCurrent: this.config.showCurrent,
+      showForecast: this.config.showForecast,
     })
   },
 
@@ -346,7 +348,7 @@ Module.register('MMM-OneCallWeather', {
       : this.createColumnsForecastTable(degreeLabel)
 
     if (!this.config.showCurrent) {
-      return forecastTable
+      return forecastTable || table
     }
 
     const weatherContainer = document.createElement('div')
@@ -355,7 +357,9 @@ Module.register('MMM-OneCallWeather', {
       : 'weather-layout-vertical'
 
     weatherContainer.appendChild(table)
-    weatherContainer.appendChild(forecastTable)
+    if (forecastTable) {
+      weatherContainer.appendChild(forecastTable)
+    }
 
     return weatherContainer
   },
@@ -365,11 +369,17 @@ Module.register('MMM-OneCallWeather', {
     const forecastTable = document.createElement('table')
     forecastTable.className = 'forecast-table small'
 
-    const hasAnyRain = this.forecast.days.slice(0, this.config.maxDailiesToShow).some(day => day.rain > 0)
-    const hasAnySnow = this.forecast.days.slice(0, this.config.maxDailiesToShow).some(day => day.snow > 0)
+    const days = this.forecast.days || []
+    const count = Math.min(this.config.maxDailiesToShow, days.length)
+    if (count === 0) {
+      return null
+    }
 
-    for (let i = 0; i < this.config.maxDailiesToShow; i += 1) {
-      const dailyForecast = this.forecast.days[i]
+    const hasAnyRain = days.slice(0, count).some(day => day.rain > 0)
+    const hasAnySnow = days.slice(0, count).some(day => day.snow > 0)
+
+    for (let i = 0; i < count; i += 1) {
+      const dailyForecast = days[i]
 
       const row = document.createElement('tr')
       row.className = 'vertical-row'
@@ -453,6 +463,12 @@ Module.register('MMM-OneCallWeather', {
     const forecastTable = document.createElement('table')
     forecastTable.className = 'forecast-table small'
 
+    const days = this.forecast.days || []
+    const count = Math.min(this.config.maxDailiesToShow, days.length)
+    if (count === 0) {
+      return null
+    }
+
     const dayRow = document.createElement('tr')
     const iconRow = document.createElement('tr')
     const maxTempRow = document.createElement('tr')
@@ -461,11 +477,11 @@ Module.register('MMM-OneCallWeather', {
     const rainRow = this.config.showRainAmount ? document.createElement('tr') : null
     const snowRow = this.config.showSnowAmount ? document.createElement('tr') : null
 
-    const hasAnyRain = this.forecast.days.slice(0, this.config.maxDailiesToShow).some(day => day.rain > 0)
-    const hasAnySnow = this.forecast.days.slice(0, this.config.maxDailiesToShow).some(day => day.snow > 0)
+    const hasAnyRain = days.slice(0, count).some(day => day.rain > 0)
+    const hasAnySnow = days.slice(0, count).some(day => day.snow > 0)
 
-    for (let j = 0; j < this.config.maxDailiesToShow; j += 1) {
-      const dailyForecast = this.forecast.days[j]
+    for (let j = 0; j < count; j += 1) {
+      const dailyForecast = days[j]
 
       // Day cell
       const dayCell = document.createElement('td')
